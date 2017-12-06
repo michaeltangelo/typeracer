@@ -14,9 +14,24 @@ import random
 import socket
 import string
 import sys
+import threading
 
-IP = "172.16.178.21"
+# TODO: add support for arguments: (ip, port, username)
+# TODO: find a way to make text easier to type along with prompt
+# TODO: add "ready" feature
+# TODO: add "game over" feature with score
+# TODO: add "analytics" feature at game over screen
+IP = "localhost"
 PORT = 8000
+
+def listen_worker(client, progress):
+    HOST = socket.gethostbyname(socket.gethostname())
+    while True:
+        update = client.recv(4096).decode('ascii')
+        update_split = update.split("|")
+        ip = update_split[0]
+        count = update_split[1]
+        progress[ip] = count
 
 def main(stdscr):
     init_curses(stdscr)
@@ -26,6 +41,7 @@ def main(stdscr):
     client.send("txt pls".encode())
     raw_prompt = client.recv(4096).decode()
 
+
     # raw_prompt = "more and got sea come story soon other must book stop end under"
     raw_words = raw_prompt.split(" ")
     total_characters = len(raw_prompt)
@@ -34,7 +50,12 @@ def main(stdscr):
     curr_word = raw_words[word_progress_idx]
     curr_input = ""
     curr_input_wrong = ""
+    progress = {}
+    progress[socket.gethostbyname(socket.gethostname())] = 0
     try:
+        # create worker thread to listen for progress updates from server
+        listener_thread = threading.Thread(target=listen_worker, args=(client,progress))
+        listener_thread.start()
         while True:
             c = stdscr.getch()
             if c == 127:
@@ -69,6 +90,7 @@ def main(stdscr):
             stdscr.addstr("curr_input: " + curr_input + "\n")
             stdscr.addstr("curr_wrong: " + curr_input_wrong + "\n")
             stdscr.addstr("curr_word: " + curr_word + "\n")
+            stdscr.addstr("progress: " + str(progress) + "\n")
     except KeyboardInterrupt:
         # client.shutdown(1)
         client.close()
