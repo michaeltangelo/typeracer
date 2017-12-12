@@ -7,6 +7,8 @@ December 5th, 2017
 Client Code
 """
 import curses
+import uuid
+import argparse
 from curses import wrapper
 import time
 import os
@@ -16,33 +18,67 @@ import string
 import sys
 import threading
 
-# TODO: add support for arguments: (ip, port, username)
 # TODO: find a way to make text easier to type along with prompt
 # TODO: add "ready" feature
 # TODO: add "game over" feature with score
 # TODO: add "analytics" feature at game over screen
-IP = "localhost"
-PORT = 8000
 
-def listen_worker(client, progress):
-    HOST = socket.gethostbyname(socket.gethostname())
+# Command Line Arguments
+parser = argparse.ArgumentParser(description='A terminal based networked typeracing game.')
+parser.add_argument('--ip', '-ip', action='store', default="localhost", help='IP Address of Server')
+parser.add_argument('--port', '-p', action='store', type=int, default=8000, help='Port number of server')
+parser.add_argument('--username', '-u', action='store', help='Username of player')
+
+args = parser.parse_args()
+
+# IP field
+IP = args.ip
+PORT = args.port
+if not args.username:
+    USERNAME = uuid.uuid4()
+else:
+    USERNAME = args.username
+
+def listen_worker(client, game):
+    # HOST = socket.gethostbyname(socket.gethostname())
+    debug = "initializatedded!!!"
     while True:
-        update = client.recv(4096).decode('ascii')
+        game['debug'] = debug
+        update = client.recv(1024).decode()
+        game['debug'] = "GOT PASSED FIRST BLOCK"
+        # game['debug'] += str(update) + "\n"
+        if command == "start":
+            game['debug'] = "POOP"
+            sys.exit()
+            game['started'] = True
+            continue
         update_split = update.split("|")
-        ip = update_split[0]
-        count = update_split[1]
-        progress[ip] = count
+        game['debug'] = str(update_split)
+        command = update_split[0]
+        user = update_split[1]
+        count = update_split[2]
+        client.send("OK").encode()
+
+def init_countdown(stdscr, game, client):
+    while True:
+        c = stdscr.getch()
+        request = client.recv(1024).decode()
+        game['status'] = request
+        game['debug'] = request
+        if request == "GO!":
+            break
+        stdscr.clear()
+        stdscr.addstr(request)
 
 def main(stdscr):
     init_curses(stdscr)
 
     client = socket.socket( socket.AF_INET, socket.SOCK_STREAM)
     client.connect(( IP, PORT ))
-    client.send("txt pls".encode())
-    raw_prompt = client.recv(4096).decode()
-
-
-    # raw_prompt = "more and got sea come story soon other must book stop end under"
+    init_string = "txt pls|" + USERNAME
+    client.send(init_string.encode())
+    debug_main = ""
+    raw_prompt = client.recv(1024).decode()
     raw_words = raw_prompt.split(" ")
     total_characters = len(raw_prompt)
     character_progress_idx = 0
@@ -50,19 +86,44 @@ def main(stdscr):
     curr_word = raw_words[word_progress_idx]
     curr_input = ""
     curr_input_wrong = ""
-    progress = {}
-    progress[socket.gethostbyname(socket.gethostname())] = 0
+    game = {}
+    game["localhost"] = 0
+    game['debug'] = ""
+    game['started'] = False
+    game['status'] = "Waiting to Players..."
+
     try:
+        while not game['started']:
+            # game['debug'] = str(game['started'])
+            c = stdscr.getch()
+            if c == curses.KEY_ENTER or c == 10 or c == 13: # enter
+                if curr_input == "ready":
+                    client.send("ready".encode())
+                    game['debug'] = "entering while true"
+                    init_countdown(stdscr, game, client)
+                    game['debug'] = "left while true"
+                curr_input = ""
+            elif c >= 0 and c < 127:
+                curr_input += chr(c)
+            stdscr.clear()
+            stdscr.addstr("Currently waiting for players...")
+            stdscr.addstr("Type 'ready' to ready up!\n")
+            stdscr.addstr(curr_input + "\n")
+            stdscr.addstr("DEBUG: " + game['debug'] + "\n")
+            stdscr.addstr("debug main: " + debug_main + "\n")
+
+        print("game is started!")
         # create worker thread to listen for progress updates from server
-        listener_thread = threading.Thread(target=listen_worker, args=(client,progress))
+        listener_thread = threading.Thread(target=listen_worker, args=(client,game))
         listener_thread.start()
+        """
         while True:
             c = stdscr.getch()
-            if c == 127:
+            if c == 127: # backspace (on mac)
                 if len(curr_input_wrong) > 0:
                     curr_input_wrong = curr_input_wrong[:-1]
             elif c >= 0 and c < 127:
-                if c == 32:
+                if c == 32: # space
                     if curr_input == curr_word:
                         character_progress_idx += 1
                         client.send(str(character_progress_idx).encode())
@@ -91,6 +152,8 @@ def main(stdscr):
             stdscr.addstr("curr_wrong: " + curr_input_wrong + "\n")
             stdscr.addstr("curr_word: " + curr_word + "\n")
             stdscr.addstr("progress: " + str(progress) + "\n")
+            stdscr.addstr("username: " + str(USERNAME))
+            """
     except KeyboardInterrupt:
         # client.shutdown(1)
         client.close()
