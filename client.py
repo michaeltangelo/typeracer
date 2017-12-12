@@ -46,11 +46,18 @@ class Game:
     prompt = ""
     player_progress = 0
     error_progress = 0
-    all_progress = []
+    all_progress = {}
     readyUp = False
     started = 0
+    wpm = 0
     def __init__(self):
         pass
+
+    def generate_stats(self):
+        stats_str = ""
+        for player in self.all_progress:
+            stats_str += player + " - " + self.all_progress[player] + "%\n"
+        return stats_str
 
 game = Game()
 
@@ -63,30 +70,15 @@ def init_client():
     return client
 
 def calc_wpm():
-    return math.ceil((game.player_progress/5) / ((time.time() - game.start_time) / 60))
+    game.wpm = math.ceil((game.player_progress/5) / ((time.time() - game.start_time) / 60))
+    return game.wpm
 
 def main(stdscr):
     init_curses(stdscr)
 
-    # client = socket.socket( socket.AF_INET, socket.SOCK_STREAM)
-    # client.connect(( IP, PORT ))
-    # init_string = "txt pls|" + USERNAME
-    # client.send(init_string.encode())
-    # debug_main = ""
-    # raw_prompt = client.recv(1024).decode()
-    # raw_words = raw_prompt.split(" ")
-    # total_characters = len(raw_prompt)
-    # character_progress_idx = 0
-    # word_progress_idx = 0
-    # curr_word = raw_words[word_progress_idx]
     curr_input = ""
     curr_input_wrong = ""
     debug = ""
-    # game = {}
-    # game["localhost"] = 0
-    # game['debug'] = ""
-    # game['started'] = False
-    # game['status'] = "Waiting to Players..."
     try:
         client = init_client()
 
@@ -94,7 +86,7 @@ def main(stdscr):
         outputs = []
         message_queues = {}
 
-        display = "Display."
+        display = "Waiting for players... type 'ready' to ready up!"
         wpm = ""
         running = True
 
@@ -116,7 +108,7 @@ def main(stdscr):
                 elif c >= 0 and c < 127:
                     curr_input += chr(c)
                 stdscr.clear()
-                stdscr.addstr("Waiting for players...\nType 'ready' to ready up!")
+                stdscr.addstr(display)
                 stdscr.addstr("\n"+curr_input)
                 stdscr.addstr("\nDebug: " + debug)
                 while client in select.select([client], [], [], 0)[0]: # the server has sent us a message
@@ -127,6 +119,8 @@ def main(stdscr):
                     elif request == "Starting game in 3!":
                         game.started = 1
                         display = "Starting game in 3!"
+                    else:
+                        display = request
                     debug += "\n" + request
 
             elif game.started == 1: # COUNTDOWN
@@ -175,52 +169,34 @@ def main(stdscr):
                 stdscr.addstr(wrong, curses.color_pair(1))
                 stdscr.addstr(regular)
 
-                stdscr.addstr("\nWPM: " + str(wpm))
-                stdscr.addstr("\nDebug: " + debug)
+                stdscr.addstr("\nWPM: " + str(wpm) + "\n")
+                stdscr.addstr(game.generate_stats())
+                stdscr.addstr("\n\n\n\nDebug: " + debug)
                 stdscr.addstr("\nPlayer progress: " + str(game.player_progress))
                 stdscr.addstr("\nError progress: " + str(game.error_progress))
 
                 while client in select.select([client], [], [], 0)[0]: # the server has sent us a message
                     request = client.recv(1024).decode()
-                    debug += "\n" + request
+                    debug = "\n" + request + "\n" + str(game.all_progress)
+                    request_split = request.split(":")
+                    if request_split[0] == "progress":
+                        players_split = request_split[1].split("|")
+                        for player in players_split:
+                            if not player:
+                                continue
+                            player_split = player.split("//")
+                            username = player_split[0]
+                            progress = player_split[1]
+                            game.all_progress[username] = progress
+
 
             elif game.started == 3: # POST-GAME
                 c = stdscr.getch()
                 stdscr.clear()
-                stdscr.addstr("Great! You don't absolutely fucking suck.")
+                stdscr.addstr("Wow! 99.99% of people fail this test. You're exceptional! Your WPM is: " + str(game.wpm))
                 pass
-        #
-        # while inputs:
-        #     print("hi")
-        #     readable, writable, exceptional = select.select(inputs, outputs, message_queues)
-        #
-        #     while sys.stdin in readable:
-        #         c = sys.stdin.read(1)
-        #         if c.strip() == "quit":
-        #             running = True
-        #             client.shutdown()
-        #             # sys.exit()
-        #         else:
-        #             display += "\n" + str(c)
-        #         stdscr.clear()
-        #         stdscr.addstr(display)
-        #
-        #     for s in readable:
-        #         if s is client:
-        #             request = client.recv(1024).decode()
-        #             display += "\n" + request
-
-
-        # debug = ""
-        # while True:
-        #     c = stdscr.getch()
-        #     if c >= 0 and c < 127:
-        #         debug += chr(c)
-        #     stdscr.clear()
-        #     stdscr.addstr(debug)
 
     except KeyboardInterrupt:
-        # client.shutdown(1)
         client.close()
 
 def init_curses(stdscr):

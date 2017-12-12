@@ -25,6 +25,7 @@ from multiprocessing import Queue
 # Command Line Arguments
 parser = argparse.ArgumentParser(description='A terminal based networked typeracing game.')
 parser.add_argument('--debug', '-d', action='store_true', default=False, help='Displays debug text for development')
+parser.add_argument('--ip', '-ip', action='store', default="localhost", help='IP address for server')
 parser.add_argument('--port', '-p', action='store', type=int, default=8000, help='Port number for server')
 parser.add_argument('--num_clients', '-c', action='store', type=int, default=5, help='Number of clients to support')
 parser.add_argument('--num_words', '-w', action='store', type=int, default=50, help='How many random words to generate for the game')
@@ -37,7 +38,13 @@ print(args)
 if args.debug:
     IP = "localhost"
 else:
-    IP = socket.gethostbyname(socket.gethostname())
+    try:
+        IP = socket.gethostbyname(socket.gethostname())
+    except:
+        IP = "localhost"
+
+if args.ip:
+    IP = args.ip
 
 PORT = args.port
 NUM_CLIENTS = args.num_clients
@@ -55,7 +62,14 @@ class Game:
     winner = ""
 
     def __init__(self):
-        self.prompt = "this is a fake prompt and it is very very long this is a fake prompt and it is very very long this is a fake prompt and it is very very long"
+        # generate prompt
+        file_object  = open("words.txt", "r")
+        all_text = file_object.read()
+        words = all_text.split(",")
+        prompt = []
+        for i in range(NUM_WORDS):
+            prompt.append(random.choice(words))
+        self.prompt = " ".join(prompt)
         self.promptLength = len(self.prompt)
 
     def get_player_by_peer_name(self, peer_name):
@@ -101,6 +115,13 @@ class Game:
         player.ready = True
         self.numReady += 1
 
+    def generate_progress_str(self):
+        progress_str = "progress:"
+        for player in self.players:
+            percent = "%.2f" % ((player.curr_progress / self.promptLength) * 100)
+            progress_str += player.username + "//"+percent+"|"
+        return progress_str
+
 class Player:
     curr_progress = 0
     ready = False
@@ -135,7 +156,7 @@ def handle_request(request, conn_sock, addr, peer_name):
         if game.numReady >= game.numPlayers:
             game.start()
         else:
-            response = str(game.numReady) + "/" + str(game.numPlayers) + " are ready."
+            response = "Waiting for players... " + str(game.numReady) + "/" + str(game.numPlayers) + " players are ready."
             game.message_all_clients(response)
             return ""
     elif request.isdigit():
@@ -143,6 +164,7 @@ def handle_request(request, conn_sock, addr, peer_name):
         player.update_progress(int(request))
         percent = "%.2f" % ((player.curr_progress / game.promptLength) * 100)
         print("Player (", player.username, ") is now at:", percent)
+        game.message_all_clients(game.generate_progress_str())
     elif request == "done":
         game.winner = game.get_player_by_peer_name(peer_name)
     else:
@@ -202,30 +224,6 @@ def main():
 
                     # Remove message queue
                     del message_queues[s]
-
-        # Handle outputs
-        # for s in writable:
-        #     try:
-        #         next_msg = message_queues[s].get_nowait()
-        #     except Queue.Empty:
-        #         # No messages waiting so stop checking for writability.
-        #         print("output queue for", s.getpeername(), "is empty")
-        #         outputs.remove(s)
-        #     else:
-        #         print('Sending "%s" to %s' % (next_msg, s.getpeername()))
-        #         s.send(next_msg)
-
-        # Handle "exceptional conditions"
-        for s in exceptional:
-            print("handling except for", s.getpeername())
-            # Stop listening for input on the connection
-            inputs.remove(s)
-            if s in outputs:
-                outputs.remove(s)
-            s.close()
-
-            # Remove message queue
-            del message_queues[s]
 
 if __name__ == '__main__':
     main()
